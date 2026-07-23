@@ -138,6 +138,24 @@ impl UnixTerminal {
     /// termios state is captured so [`Terminal::enter_cooked_mode`] and `Drop` can restore it.
     pub fn new() -> io::Result<Self> {
         let (read, write) = open_pty()?;
+        Self::from_descriptors(read, write)
+    }
+
+    /// Opens a Unix terminal over caller-provided file descriptors.
+    ///
+    /// `read` is the input side (key presses and escape-sequence responses) and `write` is the
+    /// output side; both must refer to a terminal device, such as the two ends of a pseudoterminal.
+    /// The original termios state of `write` is captured so [`Terminal::enter_cooked_mode`] and
+    /// `Drop` can restore it, exactly as for [`Self::new`].
+    ///
+    /// Unlike [`Self::new`], this never inspects stdin/stdout and never falls back to `/dev/tty`, so
+    /// it is suitable for a process with no controlling terminal that must drive a terminal handed to
+    /// it out of band (for example a descriptor received over a Unix socket).
+    pub fn from_fds(read: OwnedFd, write: OwnedFd) -> io::Result<Self> {
+        Self::from_descriptors(FileDescriptor::Owned(read), FileDescriptor::Owned(write))
+    }
+
+    fn from_descriptors(read: FileDescriptor, write: FileDescriptor) -> io::Result<Self> {
         let source = UnixEventSource::new(read, write.try_clone()?)?;
         let original_termios = termios::tcgetattr(&write)?;
         let reader = EventReader::new(source);
